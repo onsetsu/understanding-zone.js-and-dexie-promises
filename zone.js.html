@@ -6,6 +6,7 @@
     <style>
         #log .entry:nth-child(odd) {background-color:lightgray;}
         #log .entry:nth-child(even) {background-color: #e6e6e6;}
+        #log .entry .important {background-color:salmon;}
     </style>
     <script src="zone.js"></script>
 </head>
@@ -22,10 +23,15 @@
     }
     function log(x) {
         const con = document.body.querySelector('#log');
-        con.innerHTML += `<div class="entry">${x}</div>`.replace(/<root>/gm, '&lt;root>');
+        con.innerHTML += `<div class="entry">${x}</div>`.replace(/\n/gm, '<br />').replace(/<root>/gm, '&lt;root>');
     }
-    function logStack() {
-        log(stack(logStack).replace(/\n/gm, '<br />'))
+    function logStack(title) {
+        let msg = title ? title + '\n' : '';
+        msg += stack(logStack);
+        log(msg);
+    }
+    function hr() {
+        log('<hr />');
     }
 
     {
@@ -59,7 +65,7 @@
         }
 
         main();
-        log('<hr />')
+        hr()
     }
 
     {
@@ -68,13 +74,76 @@
 
         log('Zone.current'+Zone.current);
         // The zone at the time of setTimeout invocation is rootZone
-        logStack()
+        logStack('call setTimeout');
         setTimeout(function timeoutCb1() {
             // The callback is executed in the rootZone.
-            log('in Timeout');
             log('Zone.current.name'+Zone.current.name);
-            logStack()
+            logStack('in Timeout callback')
+            hr()
         }, 0);
+    }
+
+    {
+
+        let rootZone = Zone.current;
+// LibZone represents some third party library which developer does
+// not control. This zone is here only for illustrative purposes.
+// In practice it is unlikely that most third-party libraries would
+// have such fine grained zone control.
+        let libZone = rootZone.fork({name: 'libZone'});
+// Represents a zone of an application which the developer does
+// control
+        let appZone = rootZone.fork({name: 'appZone'});
+        let appZone1 = rootZone.fork({name: 'appZone1'});
+
+// In this Example we try to demonstrate the difference between
+// resolving a promise and listening to a promise. Promise
+// resolution could happen in a third party libZone.
+        let promise = libZone.run(() => {
+            return new Promise((resolve, reject) => {
+                log('expect(Zone.current).toBe(libZone): ' + Zone.current.name);
+                // The Promise can be resolved immediately or at some later
+                // point in time as in this example.
+                setTimeout(() => {
+                    log('expect(Zone.current).toBe(libZone): ' + Zone.current.name);
+                    // Promise is resolved in libZone, but this does not affect
+                    // the promise listeners.
+                    resolve('OK');
+                }, 500);
+            });
+        });
+
+        appZone.run(() => {
+            promise.then(() => {
+                // Because the developer controls which zone the .then()
+                // executes, they will expect that the callback will execute in
+                // the same zone, in this case the appZone.
+                log('expect(Zone.current).toBe(appZone): ' + Zone.current.name);
+            });
+        });
+
+        appZone1.run(async () => {
+            log('before await expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
+            await promise.then(() => {
+                log('before await (then) expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
+            });
+            log(`<span class="important">zone.js does not support zone preservation over await expressions!!!
+we expect to still have appZone1 after the await statement, but get the <root> zone :(</span>`);
+            log('after await expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
+
+            promise.then(() => {
+                // And also different thenCallback can be invoked in different
+                // zone.
+            }).then(() => {
+                // And also different thenCallback can be invoked in different
+                // zone.
+                log('expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
+            }).then(() => {
+                // And also different thenCallback can be invoked in different
+                // zone.
+                log('expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
+            });
+        });
 
     }
 </script>
