@@ -3,15 +3,79 @@
 <head>
     <meta charset="UTF-8">
     <title>Understanding zone.js</title>
-    <script src="https://unpkg.com/zone.js@0.10.3/dist/zone.js" />
+    <style>
+        #log .entry:nth-child(odd) {background-color:lightgray;}
+        #log .entry:nth-child(even) {background-color: #e6e6e6;}
+    </style>
+    <script src="zone.js"></script>
 </head>
 <body>
 <a href="./index.html">< home</a>
-<script>
-    const con = document.body.querySelector('#container');
-    con.innerHTML += Zone;
-</script>
-Con
-<div id="container">hello</div>
+<h3>Log</h3>
+<div id="log"></div>
 </body>
+<script type="text/javascript">
+    function stack(omit=stack) {
+        const s = {};
+        Error.captureStackTrace(s, omit);
+        return s.stack.split('\n').slice(1).join('\n');
+    }
+    function log(x) {
+        const con = document.body.querySelector('#log');
+        con.innerHTML += `<div class="entry">${x}</div>`.replace(/<root>/gm, '&lt;root>');
+    }
+    function logStack() {
+        log(stack(logStack).replace(/\n/gm, '<br />'))
+    }
+
+    {
+        // RootZone is ambient and it is indistinguishable from no Zone.
+        let rootZone = Zone.current;
+
+        // We create a new zone by forking an existing zone.
+        let zoneA = rootZone.fork({name: 'zoneA'});
+        // Each zone has a name for debugging
+        log('rootZone.name: ' + rootZone.name);
+        log('zoneA.name: ' + zoneA.name);
+        log('zoneA.parent.name: ' + zoneA.parent.name);
+
+        function main() {
+            // zones can be entered/exited using the `run or runGuarded or runTask` method only.
+            zoneA.run(function fnOuter() {
+                // inside the `run` method the Zone.current has been updated
+                log('Zone.current: ' + Zone.current);
+                // Mental model: Each stack frame is associated with a zone
+                logStack();
+
+                // Zones are nested in the same way that stack frames are nested.
+                rootZone.run(function fnInner() {
+                    // There is no reason why a nested stack frame must be
+                    // a child of parent stack frame zone.
+                    // This is how one can "escape" a zone.
+                    log('Zone.current: ' + Zone.current);
+                    logStack();
+                });
+            });
+        }
+
+        main();
+        log('<hr />')
+    }
+
+    {
+        let rootZone = Zone.current;
+        let zoneA = rootZone.fork({name: 'A'});
+
+        log('Zone.current'+Zone.current);
+        // The zone at the time of setTimeout invocation is rootZone
+        logStack()
+        setTimeout(function timeoutCb1() {
+            // The callback is executed in the rootZone.
+            log('in Timeout');
+            log('Zone.current.name'+Zone.current.name);
+            logStack()
+        }, 0);
+
+    }
+</script>
 </html>
