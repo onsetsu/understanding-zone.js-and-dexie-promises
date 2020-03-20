@@ -128,6 +128,7 @@
                 log('before await (then) expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
             });
             log(`<span class="important">zone.js does not support zone preservation over await expressions!!!
+[zone.js version 0.10.3 (https://unpkg.com/zone.js@0.10.3/dist/zone.js); Google Chrome version 80.0.3987.149]
 we expect to still have appZone1 after the await statement, but get the <root> zone :(</span>`);
             log('after await expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
 
