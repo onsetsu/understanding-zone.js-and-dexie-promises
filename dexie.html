@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Understanding Dexie Promises</title>
     <link href="log.css" rel="stylesheet"/>
-    <script src="zone.js"></script>
+    <script src="dexie.js"></script>
     <script src="log.js"></script>
 </head>
 <body>
@@ -13,118 +13,129 @@
 <h3>Log</h3>
 </body>
 <script type="text/javascript">
-    {
-        // RootZone is ambient and it is indistinguishable from no Zone.
-        let rootZone = Zone.current;
+/*    //
+    // Define your database
+    //
+    var db = new Dexie("friend_database");
+    db.version(1).stores({
+        friends: 'name,shoeSize'
+    });
 
-        // We create a new zone by forking an existing zone.
-        let zoneA = rootZone.fork({name: 'zoneA'});
-        // Each zone has a name for debugging
-        log('rootZone.name: ' + rootZone.name);
-        log('zoneA.name: ' + zoneA.name);
-        log('zoneA.parent.name: ' + zoneA.parent.name);
-
-        function main() {
-            // zones can be entered/exited using the `run or runGuarded or runTask` method only.
-            zoneA.run(function fnOuter() {
-                // inside the `run` method the Zone.current has been updated
-                log('Zone.current: ' + Zone.current);
-                // Mental model: Each stack frame is associated with a zone
-                logStack();
-
-                // Zones are nested in the same way that stack frames are nested.
-                rootZone.run(function fnInner() {
-                    // There is no reason why a nested stack frame must be
-                    // a child of parent stack frame zone.
-                    // This is how one can "escape" a zone.
-                    log('Zone.current: ' + Zone.current);
-                    logStack();
-                });
-            });
-        }
-
-        main();
-        hr()
+    //
+    // Put some data into it
+    //
+    db.friends.put({name: "Nicolas", shoeSize: 8}).then (function(){
+        //
+        // Then when data is stored, read from it
+        //
+        return db.friends.get('Nicolas');
+    }).then(function (friend) {
+        //
+        // Display the result
+        //
+        log ("Nicolas has shoe size " + friend.shoeSize);
+    }).catch(function(error) {
+        //
+        // Finally don't forget to catch any error
+        // that could have happened anywhere in the
+        // code blocks above.
+        //
+        log ("Ooops: " + error);
+    });*/
+function cLog(c) {
+    return function l(msg) {
+        return log(`<span style='background-color: ${c}'>${msg}</span>`);
     }
+}
 
-    {
-        let rootZone = Zone.current;
-        let zoneA = rootZone.fork({name: 'A'});
+{
+    const l = cLog('limegreen');
+    // Create a PSD scope
+    Dexie.Promise.newPSD (function () {
 
-        log('Zone.current'+Zone.current);
-        // The zone at the time of setTimeout invocation is rootZone
-        logStack('call setTimeout');
-        setTimeout(function timeoutCb1() {
-            // The callback is executed in the rootZone.
-            log('Zone.current.name'+Zone.current.name);
-            logStack('in Timeout callback')
-            hr()
-        }, 0);
-    }
+        // Put something in it.
+        l('set var on PSD to 3');
+        Dexie.Promise.PSD.test = 3;
 
-    {
-
-        let rootZone = Zone.current;
-// LibZone represents some third party library which developer does
-// not control. This zone is here only for illustrative purposes.
-// In practice it is unlikely that most third-party libraries would
-// have such fine grained zone control.
-        let libZone = rootZone.fork({name: 'libZone'});
-// Represents a zone of an application which the developer does
-// control
-        let appZone = rootZone.fork({name: 'appZone'});
-        let appZone1 = rootZone.fork({name: 'appZone1'});
-
-// In this Example we try to demonstrate the difference between
-// resolving a promise and listening to a promise. Promise
-// resolution could happen in a third party libZone.
-        let promise = libZone.run(() => {
-            return new Promise((resolve, reject) => {
-                log('expect(Zone.current).toBe(libZone): ' + Zone.current.name);
-                // The Promise can be resolved immediately or at some later
-                // point in time as in this example.
-                setTimeout(() => {
-                    log('expect(Zone.current).toBe(libZone): ' + Zone.current.name);
-                    // Promise is resolved in libZone, but this does not affect
-                    // the promise listeners.
-                    resolve('OK');
-                }, 500);
-            });
+        // Create a promise that uses it
+        new Dexie.Promise(function (resolve, reject) {
+            setTimeout(resolve, 200);
+        }).then (function () {
+            hr();
+            // This callback will get same PSD instance as was active when .then() was called
+            l(`expect var on PSD to be 3: ` + Dexie.Promise.PSD.test);
         });
+    });
 
-        appZone.run(() => {
-            promise.then(() => {
-                // Because the developer controls which zone the .then()
-                // executes, they will expect that the callback will execute in
-                // the same zone, in this case the appZone.
-                log('expect(Zone.current).toBe(appZone): ' + Zone.current.name);
+    l(`expect var outside that scope NOT to be 3: ` + Dexie.Promise.PSD.test);
+}
+{
+    const log = cLog('beige');
+    // Create a PSD scope
+    Dexie.Promise.newPSD (function () {
+
+        // Put something in it.
+        log('set var on PSD to 5');
+        Dexie.Promise.PSD.test = 5;
+
+        // Create a promise that uses it
+        new Dexie.Promise(function (resolve, reject) {
+            setTimeout(resolve, 500);
+        }).then (async function () {
+            hr();
+
+            // This callback will get same PSD instance as was active when .then() was called
+            log(`expect var on PSD to be 5: (BEFORE AWAIT)` + Dexie.Promise.PSD.test);
+            await new Promise(res => setTimeout(res, 200));
+            log(`expect var on PSD to be 5 (AFTER AWAIT): ` + Dexie.Promise.PSD.test);
+            Dexie.Promise.newPSD (async function () {
+                Dexie.Promise.PSD.test = 6;
+                log(`expect var on PSD to be 6 (inner BEFORE AWAIT new scope): ` + Dexie.Promise.PSD.test);
+                await 3;
+                log(`expect var on PSD to be 6 (inner AFTER AWAIT new scope): ` + Dexie.Promise.PSD.test);
             });
+            log(`expect var on PSD to be 5 (AFTER new scope): ` + Dexie.Promise.PSD.test);
         });
+    });
 
-        appZone1.run(async () => {
-            log('before await expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
-            await promise.then(() => {
-                log('before await (then) expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
-            });
-            log(`<span class="important">zone.js does not support zone preservation over await expressions!!!
-[zone.js version 0.10.3 (https://unpkg.com/zone.js@0.10.3/dist/zone.js); Google Chrome version 80.0.3987.149]
-we expect to still have appZone1 after the await statement, but get the <root> zone :(</span>`);
-            log('after await expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
+    log(`expect var outside that scope NOT to be 5: ` + Dexie.Promise.PSD.test);
+}
+{
+    const log = cLog('steelblue');
+    // Create a PSD scope
+    Dexie.Promise.newPSD (async function () {
 
-            promise.then(() => {
-                // And also different thenCallback can be invoked in different
-                // zone.
-            }).then(() => {
-                // And also different thenCallback can be invoked in different
-                // zone.
-                log('expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
-            }).then(() => {
-                // And also different thenCallback can be invoked in different
-                // zone.
-                log('expect(Zone.current).toBe(appZone1): ' + Zone.current.name);
-            });
+        // Put something in it.
+        log('set var on PSD to 7');
+        Dexie.Promise.PSD.test = 7;
+
+        // Create a promise that uses it
+        Promise.resolve().then(async function (resolve, reject) {
+            hr();
+            // This callback will get same PSD instance as was active when .then() was called
+            log(`expect var on PSD to be 7 (BEFORE AWAIT 1): ` + Dexie.Promise.PSD.test);
+            log(`depending on what we await here, a <span class='important'> Promise or a non Promise</span>, Dexie will work as intended or not:
+ for non Promises, the <span class='important'> order of execution will also be different</span> (could be a Dexie Bug, due to manual task scheduling and the inability of dexie to recognize the await operator on a non-promise)`);
+            await 1;
+            log(`expect var on PSD to be 7 (AFTER AWAIT 1): <span class='important'>${Dexie.Promise.PSD.test}</span> <-- awaiting a non-Promise`);
+            setTimeout(resolve, 1000);
+        }).then(async function (resolve, reject) {
+            // This callback will get same PSD instance as was active when .then() was called
+            log(`expect var on PSD to be 7 (BEFORE AWAIT): ` + Dexie.Promise.PSD.test);
+            await 'not a Promise';
+            log(`expect var on PSD to be 7 (AFTER AWAIT): <span class='important'>${Dexie.Promise.PSD.test}</span> <-- awaiting a non-Promise`);
+            setTimeout(resolve, 1000);
+        }).then(async function (resolve, reject) {
+            // This callback will get same PSD instance as was active when .then() was called
+            log(`expect var on PSD to be 7 (BEFORE AWAIT): ` + Dexie.Promise.PSD.test);
+            await Promise.resolve();
+            log(`expect var on PSD to be 7 (AFTER AWAIT): <span class='important'>${Dexie.Promise.PSD.test}</span> <-- awaiting a Promise`);
+            setTimeout(resolve, 1000);
         });
+    });
 
-    }
+    log(`expect var outside that scope NOT to be 7: ` + Dexie.Promise.PSD.test);
+}
+
 </script>
 </html>
